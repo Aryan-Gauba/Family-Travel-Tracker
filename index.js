@@ -1,16 +1,18 @@
+import "dotenv/config"; // Must be the first import
 import express from "express";
 import bodyParser from "body-parser";
 import pg from "pg";
 
 const app = express();
-const port = 3000;
+const port = process.env.PORT || 3000;
 
+// Database Connection using Environment Variables
 const db = new pg.Client({
-  user: "postgres",
-  host: "localhost",
-  database: "world",
-  password: "12345",
-  port: 5432,
+  user: process.env.PG_USER,
+  host: process.env.PG_HOST,
+  database: process.env.PG_DATABASE,
+  password: process.env.PG_PASSWORD,
+  port: process.env.PG_PORT,
 });
 db.connect();
 
@@ -18,15 +20,11 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static("public"));
 
 let currentUserId = 1;
-
-let users = [
-  { id: 1, name: "Angela", color: "teal" },
-  { id: 2, name: "Jack", color: "powderblue" },
-];
+let users = [];
 
 async function checkVisisted() {
   const result = await db.query(
-    "SELECT country_code FROM visited_countries JOIN users ON users.id = user_id WHERE user_id = $1; ",
+    "SELECT country_code FROM visited_countries JOIN users ON users.id = user_id WHERE user_id = $1;",
     [currentUserId]
   );
   let countries = [];
@@ -49,12 +47,12 @@ app.get("/", async (req, res) => {
     countries: countries,
     total: countries.length,
     users: users,
-    color: currentUser.color,
+    color: currentUser ? currentUser.color : "teal", // Added safety check
   });
 });
+
 app.post("/add", async (req, res) => {
   const input = req.body["country"];
-  const currentUser = await getCurrentUser();
 
   try {
     const result = await db.query(
@@ -71,10 +69,12 @@ app.post("/add", async (req, res) => {
       );
       res.redirect("/");
     } catch (err) {
-      console.log(err);
+      console.log("Error inserting visited country:", err);
+      res.redirect("/"); // Redirect anyway to show current state
     }
   } catch (err) {
-    console.log(err);
+    console.log("Country not found or query error:", err);
+    res.redirect("/");
   }
 });
 
@@ -88,20 +88,22 @@ app.post("/user", async (req, res) => {
 });
 
 app.post("/new", async (req, res) => {
-  //Hint: The RETURNING keyword can return the data that was inserted.
-  //https://www.postgresql.org/docs/current/dml-returning.html
   const name = req.body.name;
   const color = req.body.color;
 
-  const result = await db.query(
-    "INSERT INTO users (name, color) VALUES($1, $2) RETURNING *;",
-    [name, color]
-  );
+  try {
+    const result = await db.query(
+      "INSERT INTO users (name, color) VALUES($1, $2) RETURNING *;",
+      [name, color]
+    );
 
-  const id = result.rows[0].id;
-  currentUserId = id;
-
-  res.redirect("/");
+    const id = result.rows[0].id;
+    currentUserId = id;
+    res.redirect("/");
+  } catch (err) {
+    console.log("Error adding new user:", err);
+    res.redirect("/");
+  }
 });
 
 app.listen(port, () => {
